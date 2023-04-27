@@ -8,6 +8,22 @@ pub trait Action {
 
 /// Gives basic information about a game
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ApiError {
+    #[serde(alias = "description")]
+    pub desc : String,
+    pub error : bool
+}
+
+impl std::fmt::Display for ApiError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.desc)
+    }
+}
+
+impl std::error::Error for ApiError { }
+
+/// Gives basic information about a game
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GameInfo {
     pub gameid: String,
     pub running: bool, 

@@ -1,4 +1,4 @@
-use reqwest::blocking::Client;
+use reqwest::{blocking::Client, StatusCode};
 use serde::de::DeserializeOwned;
 
 mod objs;
@@ -43,14 +43,12 @@ impl Api {
         fn post_req<T : DeserializeOwned>(&self, url : &str) -> Result<T, crate::Error> {
             match self.client.post(url).body("")
                 .send() {
-                Ok(res) => { 
-                    #[cfg(not(feature = "high-dbg"))]
-                    let res = Ok(res.json::<T>()?);
-
-                    #[cfg(feature = "high-dbg")]
-                    let res = Ok(dbg!(res).json::<T>()?); 
-
-                    res
+                Ok(res) => {
+                    if res.status() == StatusCode::BAD_REQUEST {
+                        Err(Box::new(res.json::<ApiError>()?))
+                    } else {
+                        Ok(res.json::<T>()?)
+                    }
                 },
                 Err(err) => { 
                     #[cfg(not(feature = "high-dbg"))]
@@ -58,6 +56,7 @@ impl Api {
                     
                     #[cfg(feature = "high-dbg")]
                     let res = Err(Box::from(dbg!(err)));
+
 
                     res
                 }
@@ -89,32 +88,26 @@ impl Api {
     
     pub fn game_create(&mut self) -> Result<Option<GameInfo>, crate::Error> {
         match self.game_post_req::<GameInfo>("/create") {
-            Ok(val) => {
-                self.running = true;
-                Ok(Some(val))
-            },
-            // React "already existing" error
-            Err(err) => if err.to_string().contains("missing field `gameid`") {   
-                self.running = true;  
-                Ok(None)
-            } else {
-                Err(err)
+            Ok(res) => Ok(Some(res)),
+            Err(err) => {
+                if err.to_string().starts_with("You already own a running game") {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
             }
         }
     }
     
     pub fn game_close(&mut self) -> Result<Option<GameInfo>, crate::Error> {
         match self.game_post_req::<GameInfo>("/close") {
-            Ok(val) => {
-                self.running = false; 
-                Ok(Some(val))
-            },
-            // React "already closed" error
-            Err(err) => if err.to_string().contains("missing field `gameid`") {  
-                self.running = false;   
-                Ok(None)
-            } else {
-                Err(err)
+            Ok(res) => Ok(Some(res)),
+            Err(err) => {
+                if err.to_string().starts_with("There is no game which could be closed") {
+                    Ok(None)
+                } else {
+                    Err(err)
+                }
             }
         }
     }

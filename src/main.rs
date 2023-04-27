@@ -13,8 +13,8 @@ mod test;
 pub type Error = Box<dyn std::error::Error>;
 
 fn main() -> Result<(), Error> {
-    let mut a = api::Api::new("f2b4f1a2-07ba-4a41-bb42-37a8a7206970".to_owned());
-
+    let mut a = api::Api::new(include_str!("../assets/token.key").to_owned());
+    
     dbg!(a.game_create()?);
 
     dbg!(a.player_move(api::Direction::North)?);

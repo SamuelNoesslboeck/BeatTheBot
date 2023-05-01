@@ -1,40 +1,41 @@
-use std::fs::OpenOptions;
+use std::fs::{OpenOptions, File};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
-
-use chrono::Utc;
+use chrono::Local;
 
 pub trait Logger {
-    fn logln(&mut self, line : String);
+    fn logln<S : Into<String>>(&mut self, line : S);
 }
 
 impl<'a, T : Logger> Logger for Arc<Mutex<T>> {
     #[inline(always)]
-    fn logln(&mut self, line : String) {
+    fn logln<S : Into<String>>(&mut self, line : S) {
         self.lock().unwrap().logln(line)
     }
 }
 
-#[derive(Clone)]
 pub struct FileLogger {
-    path : String
+    file : File
 }
 
 impl FileLogger {
     pub fn new(path: String) -> Self { 
-        Self { path } 
+        let file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(true)
+            .open(&path).unwrap();
+
+        Self { file } 
     }
 }
 
 impl Logger for FileLogger {
-    fn logln(&mut self, line : String) {
-        let mut file = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .append(true)
-            .open(&self.path).unwrap();
+    fn logln<S : Into<String>>(&mut self, line : S) {
+        let line_str = line.into();
+        let time_stamp = Local::now().format("%H:%M:%S");
 
-        println!("[{}] {}", Utc::now().format("%H:%M:%S"), line); 
-        writeln!(&mut file, "[{}] {}", Utc::now().format("%H:%M:%S"), line).unwrap(); 
+        println!("[{}] {}", time_stamp, line_str); 
+        writeln!(&mut self.file, "[{}] {}", time_stamp, line_str).unwrap(); 
     }
 }

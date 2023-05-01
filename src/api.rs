@@ -7,7 +7,7 @@ pub use objs::*;
 const ADDRESS : &str = "https://game-dd.countit.at/api";
 
 #[allow(dead_code)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Direction {
     North,
     East,

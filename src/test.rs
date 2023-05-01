@@ -1,3 +1,5 @@
+mod player;
+
 /// Checks if the API function "game_create" is functioning
 #[test]
 fn game_create() -> Result<(), crate::Error> {

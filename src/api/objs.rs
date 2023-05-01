@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use super::Direction;
+use crate::api::Direction;
 
 pub trait ActionInfo {
     fn action(&self) -> String;
@@ -47,7 +47,8 @@ pub struct GameInfo {
     pub struct MoveInfo {
         action : String,
         executed : bool,
-        pub r#move : bool
+        #[serde(alias = "move")]
+        pub moved : bool
     }
 
     impl ActionInfo for MoveInfo {

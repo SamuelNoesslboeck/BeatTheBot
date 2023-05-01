@@ -9,7 +9,7 @@ pub use api::{Api, ApiError};
 
 /// Functions and structs for rebuilding the actual game
 pub mod game;
-pub use game::{AbsPos, RelPos, OptPos};
+pub use game::{AbsPos, RelPos, OptPos, Game, FileLogger, Logger};
 
 pub mod player;
 

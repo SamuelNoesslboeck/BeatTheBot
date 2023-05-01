@@ -3,11 +3,16 @@ name = "beat_the_bot"
 version = "0.1.0"
 edition = "2021"
 description = "Bot for the internal 'BeatTheBot' programming competition"
+default-run = "bot"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bin]]
 name = "bot"
 path = "bin/bot.rs"
+
+[[bin]]
+name = "map_wall"
+path = "bin/map_wall.rs"
 
 [lib]
 name = "doof_bot"
@@ -17,6 +22,7 @@ path = "src/lib.rs"
 chrono = "0.4.24"
 reqwest = { version = "0.11.16", features = [ "blocking", "json" ] }
 serde = { version = "1.0.160", features = [ "derive" ] }
+serde_json = "1.0.96"
 
 [features]
 high-dbg = []

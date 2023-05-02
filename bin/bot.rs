@@ -2,7 +2,7 @@ use doof_bot::{Game, FileLogger, Logger};
 use doof_bot::api::{ActionInfo, Api};
 
 fn main() -> Result<(), doof_bot::Error> {
-    let mut api = Api::new(include_str!("../assets/token.key").to_owned());
+    let api = Api::new(include_str!("../assets/token.key").to_owned());
 
     let mut game = Game::new(
         include_str!("../assets/token.key").to_owned(), 
@@ -17,13 +17,20 @@ fn main() -> Result<(), doof_bot::Error> {
         log.logln("");
     }));
 
+    game.on_kill(Some(|log, stats| {
+        log.logln(format!(" => Made a kill! {}, {}", stats.kills, stats.kd()));
+    }));
+
+    game.on_death(Some(|log, stats| {
+        log.logln(format!(" => Player died! {}", stats.deaths));
+    }));
+
     game.on_new_level(Some(|log, stats| {
         log.logln("");
         log.logln("========================");
         log.logln(" => Reached next level!");
         log.logln("========================");
-        log.logln(format!("| Kills: {}", stats.kills));
-        log.logln(format!("| Deaths: {}", stats.deaths));
+        log.logln(format!("{:?}", stats));
         log.logln("");
     })); 
 
@@ -34,47 +41,26 @@ fn main() -> Result<(), doof_bot::Error> {
     }));
 
     game.start()?;
-    game.start_stats_loop();
     
-    for _ in 0 .. 30 {              
-        for _ in 0 .. 10 {          // About 1 minute
-            let info =  api.player_ult()?;
+    for _ in 0 .. 1000 {              
+        let info =  api.player_ult()?;
 
-            if info.executed() {
-            } else {    
-                println!(" -> Not executed!"); 
-            }
+        if !info.executed() {
+            println!(" -> Not executed!"); 
+        }
+        
+        for _ in 0 .. 5 {
+            let s_info = api.player_shoot(game.player.lock().unwrap().get_dir())?;
 
-            for _ in 0 .. 20 {
-                let r_info = api.player_radar()?;
-
-                if r_info.executed() {
-                    let dir = r_info.best_move_dir(); 
-
-                    let m_info = api.player_move(dir)?;
-                    let h_info  = api.player_hit(dir)?;
-
-                    if !m_info.executed() {
-                        println!(" -> Move not executed!");
-                    }
-
-                    if !m_info.moved {
-                        println!(" -> Hit a wall! {:?}", dir);
-                    }
-
-                    if h_info.executed() {
-                        if h_info.hit > 0 {
-                            // println!("Hit a target with normal attack! {}", h_info.hit);
-                        }
-                    } else {
-                        println!(" -> Hit failed");
-                    }
-                } else {
-                    println!(" -> Radar not executed!");
+            if !s_info.executed() {
+                println!(" -> Shoot not executed!");
+            } else {
+                if s_info.hit {
+                    println!(" -> Hit a target!");
                 }
-
-                std::thread::sleep(std::time::Duration::from_millis(250));
             }
+
+            std::thread::sleep(std::time::Duration::from_millis(1000));
         }
 
         // println!(" => Enimies hit with ult {}", hits);

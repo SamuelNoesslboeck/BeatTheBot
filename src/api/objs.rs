@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use crate::api::Direction;
+use crate::{api::Direction, OptPos};
 
 pub trait ActionInfo {
     fn action(&self) -> String;
@@ -112,27 +112,27 @@ pub struct GameInfo {
     }
 
     impl RadarResult {
-        pub fn best_move_dir(&self) -> Direction {
-            let mut max_dir : Direction = Direction::North;
+        pub fn best_move_dir(&self) -> Option<Direction> {
+            let mut max_dir = None;
             let mut max_dir_val = 0;
 
             if self.north > max_dir_val {
-                max_dir = Direction::North;
+                max_dir = Some(Direction::North);
                 max_dir_val = self.north;
             }
 
             if self.east > max_dir_val {
-                max_dir = Direction::East;
+                max_dir = Some(Direction::East);
                 max_dir_val = self.east;
             }
 
             if self.south > max_dir_val {
-                max_dir = Direction::South;
+                max_dir = Some(Direction::South);
                 max_dir_val = self.south;
             }
 
             if self.west > max_dir_val {
-                max_dir = Direction::West;
+                max_dir = Some(Direction::West);
             }
 
             max_dir
@@ -150,7 +150,7 @@ pub struct GameInfo {
     }
 
     impl RadarInfo {
-        pub fn best_move_dir(&self) -> Direction {
+        pub fn best_move_dir(&self) -> Option<Direction> {
             self.results.best_move_dir()
         } 
     }
@@ -165,6 +165,18 @@ pub struct GameInfo {
         }
     }
 
+    #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+    pub struct ScanPos {
+        x : Option<i32>,
+        y : Option<i32>
+    }
+
+    impl ScanPos {
+        pub fn to_optpos(&self) -> OptPos {
+            OptPos(self.x, self.y)
+        }
+    }
+
     /// Gives basic information about a radar command sent
     #[derive(Clone, Debug, Serialize, Deserialize)]
     pub struct ScanInfo {
@@ -172,7 +184,7 @@ pub struct GameInfo {
         executed : bool,
 
         #[serde(alias = "differenceToNearestPlayer")]
-        pub nearest : crate::OptPos
+        pub nearest : ScanPos
     }
 
     impl ActionInfo for ScanInfo {

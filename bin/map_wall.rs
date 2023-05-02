@@ -20,7 +20,6 @@ fn main() -> Result<(), doof_bot::Error> {
     }));
 
     game.start()?;
-    game.start_stats_loop();
     
     let mut dir = Direction::North; 
 

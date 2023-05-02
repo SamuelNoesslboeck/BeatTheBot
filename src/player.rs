@@ -1,11 +1,12 @@
-use crate::{OptPos, RelPos};
+use crate::{OptPos, RelPos, Map};
 use crate::api::Direction;
-use crate::game::Map;
 
 #[derive(Clone, Debug, Default)]
 pub struct Player {
     pub pos : OptPos,
-    pub delta_pos : RelPos
+    pub delta_pos : RelPos,
+
+    dir : Direction 
 }
 
 impl Player {
@@ -15,6 +16,46 @@ impl Player {
 
     pub fn reset_pos(&mut self) { 
         self.pos = OptPos::default();
+        self.delta_pos = RelPos::default();
+    }
+
+    #[inline]
+    pub fn set_dir(&mut self, dir : Direction) {
+        self.dir = dir;
+    }
+
+    #[inline]
+    pub fn get_dir(&self) -> Direction {
+        self.dir
+    }
+
+    pub fn reg_move(&mut self, dir : Direction) {
+        match dir {
+            Direction::North => {
+                self.delta_pos.1 += 1; 
+                if let Some(y) = self.pos.1 {
+                    self.pos.1 = Some(y + 1);
+                }
+            }, 
+            Direction::East => {
+                self.delta_pos.0 += 1; 
+                if let Some(x) = self.pos.0 {
+                    self.pos.0 = Some(x + 1);
+                }
+            },
+            Direction::South => {
+                self.delta_pos.1 -= 1; 
+                if let Some(y) = self.pos.1 {
+                    self.pos.1 = Some(y - 1);
+                }
+            },
+            Direction::West => {
+                self.delta_pos.0 -= 1; 
+                if let Some(x) = self.pos.0 {
+                    self.pos.0 = Some(x - 1);
+                }
+            }
+        }
     }
 
     pub fn map_wall(&mut self, dir : Direction, map : &Map) {

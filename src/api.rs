@@ -15,9 +15,26 @@ pub enum Direction {
     West
 }
 
+impl Default for Direction {
+    fn default() -> Self {
+        Self::North
+    }
+}
+
 impl ToString for Direction {
     fn to_string(&self) -> String {
         (*self as u64).to_string()
+    }
+}
+
+impl Direction {
+    pub fn opposite(&self) -> Self {
+        match self {
+            Self::North => Self::South,
+            Self::East => Self::West,
+            Self::South => Self::North,
+            Self::West => Self::East
+        }
     }
 }
 
@@ -97,7 +114,7 @@ impl Api {
         }
     // 
 
-    pub fn game_create(&mut self) -> Result<Option<GameInfo>, crate::Error> {
+    pub fn game_create(&self) -> Result<Option<GameInfo>, crate::Error> {
         match self.post_req_game::<GameInfo>("/create") {
             Ok(res) =>  { 
                 Ok(Some(res))
@@ -112,7 +129,7 @@ impl Api {
         }
     }
     
-    pub fn game_close(&mut self) -> Result<Option<GameInfo>, crate::Error> {
+    pub fn game_close(&self) -> Result<Option<GameInfo>, crate::Error> {
         match self.post_req_game::<GameInfo>("/close") {
             Ok(res) => {
                 Ok(Some(res))
@@ -127,7 +144,7 @@ impl Api {
         }
     }
 
-    pub fn game_status(&mut self) -> Result<GameInfo, crate::Error> {
+    pub fn game_status(&self) -> Result<GameInfo, crate::Error> {
         let status = self.get_req_game::<GameInfo>("/status")?; 
 
         Ok(status)

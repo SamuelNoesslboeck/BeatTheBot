@@ -1,5 +1,4 @@
 use core::time::Duration;
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -71,6 +70,30 @@ impl GameStats {
         }
     }
 
+    pub fn last_stamp_elapsed(&self) -> Option<Duration> {
+        if let Some(stamp) = self.stamps.last() {
+            return Some(stamp.1.elapsed());
+        } else {
+            None
+        }
+    }
+
+    pub fn last_kills(&self) -> Option<u32> {
+        if let Some(stamp) = self.stamps.last() {
+            return Some(self.kills - stamp.0.kills);
+        } else {
+            None
+        }
+    }
+
+    pub fn last_deaths(&self) -> Option<u32> {
+        if let Some(stamp) = self.stamps.last() {
+            return Some(self.deaths - stamp.0.deaths);
+        } else {
+            None
+        }
+    }
+
     pub fn create_stamp(&mut self) {
         self.stamps.push(
             (self.clone_nostamp(), Instant::now())
@@ -79,6 +102,24 @@ impl GameStats {
 
     pub fn kd(&self) -> f32 {
         self.kills as f32 / self.deaths as f32
+    }
+
+    pub fn kills_per_min(&self) -> Option<f32> {
+        if let Some(stamp) = self.stamps.first() {
+            let mins = stamp.1.elapsed().as_secs_f32() / 60.0;
+            Some(self.kills as f32 / mins)
+        } else {
+            None
+        }
+    }
+
+    pub fn deaths_per_min(&self) -> Option<f32> {
+        if let Some(stamp) = self.stamps.first() {
+            let mins = stamp.1.elapsed().as_secs_f32() / 60.0;
+            Some(self.deaths as f32 / mins)
+        } else {
+            None
+        }
     }
 }
 
@@ -92,13 +133,6 @@ pub struct Game<L : Logger> {
     events : Arc<Mutex<Events<L>>>,
     pub player : Arc<Mutex<Player>>,
 
-    // Acting
-    stats_loop : Option<std::thread::JoinHandle<()>>,
-    move_loop : Option<std::thread::JoinHandle<()>>,
-    hit_loop : Option<std::thread::JoinHandle<()>>,
-    radar_loop : Option<std::thread::JoinHandle<()>>,
-    teleport_loop : Option<std::thread::JoinHandle<()>>,
-
     loops : Vec<std::thread::JoinHandle<()>>
 }
 
@@ -111,12 +145,6 @@ impl<L : Logger + Send + 'static> Game<L> {
             api: Arc::new(Api::new(token.clone())), 
             events: Arc::new(Mutex::new(Events::default())), 
             player: Arc::new(Mutex::new(Player::new())), 
-
-            stats_loop: None,
-            move_loop: None,
-            hit_loop: None,
-            radar_loop: None,
-            teleport_loop: None,
 
             loops: Vec::new()
         }
@@ -240,6 +268,14 @@ impl<L : Logger + Send + 'static> Game<L> {
         
                         if stats_prev.level.name != stats.level.name {
                             player.reset_pos();
+
+                            if gstats.map.kills_goal.is_some() {
+                                gstats.kills += 1;
+        
+                                if let Some(on_kill) = events.on_kill {
+                                    on_kill(&mut logger, &mut gstats);
+                                }
+                            }
         
                             if let Some(on_new_level) = events.on_new_level {
                                 on_new_level(&mut logger, &mut gstats);
@@ -265,197 +301,114 @@ impl<L : Logger + Send + 'static> Game<L> {
         }
 
         fn start_move_loop(&mut self) {
-            self.move_loop = Some(start_move_loop(
-                self.api.clone(),
-                self.logger.clone(),
-                self.stats.clone(),
-                self.player.clone()
-            ));
-        }
-
-        fn start_hit_loop(&mut self) {
-            self.hit_loop = Some(start_hit_loop(
-                self.api.clone(), 
-                self.logger.clone(),
-                self.stats.clone(),
-                self.player.clone()
-            ))
+            self.append_loop(|api, player_mut, gstats_mut, _, _| -> Result<(), crate::Error> {
+                loop {
+                    let opt_dir = player_mut.lock().unwrap().get_dir(); 
+                    let inst = Instant::now();
+    
+                    if let Some(dir) = opt_dir {
+                        let m_info = api.player_move(dir)?;
+                        let stats = gstats_mut.lock().unwrap();
+                        let mut player = player_mut.lock().unwrap();
+        
+                        if !m_info.executed() {
+                            // TODO: Proper error
+                            println!("Move not executed!");
+                            continue;
+                        }
+        
+                        if !m_info.moved {
+                            player.set_dir(Some(dir.opposite()));
+                            player.map_wall(dir, &stats.map);
+                        }
+        
+                        drop(player);
+                        drop(stats);
+                    }
+    
+                    let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.3
+    
+                    if elapsed < 0.25 {
+                        std::thread::sleep(Duration::from_secs_f32(0.25 - elapsed));
+                    }
+                }
+            });
         }
 
         fn start_radar_loop(&mut self) {
-            self.radar_loop = Some(start_radar_loop(
-                self.api.clone(), 
-                self.logger.clone(),
-                self.stats.clone(),
-                self.player.clone()
-            ))
+            self.append_loop(|api, player_mut, _, _, _| -> Result<(), crate::Error> {
+                let mut last_dash = Instant::now(); 
+                loop {
+                    let inst = Instant::now();
+                    let r_info = api.player_radar()?;
+                    // let stats = gstats_mut.lock().unwrap();
+                    let mut player = player_mut.lock().unwrap();
+    
+                    if !r_info.executed() {
+                        // TODO: Proper error
+                        println!("Radar not executed!");
+                        continue;
+                    }
+                    
+                    if r_info.results.sameblock == 0 {
+                        if let Some(dir) = r_info.best_move_dir() {
+                            player.set_dir(Some(dir));
+        
+                            if last_dash.elapsed().as_secs_f32() > 5.0 {
+                                let d_info = api.player_dash(dir)?;
+        
+                                if d_info.executed() {
+                                    println!(" => Dashed!");
+                                }
+        
+                                last_dash = Instant::now();
+                            }
+                        }   
+                    } else {
+                        player.set_dir(None);
+                    }
+    
+                    drop(player);
+    
+                    let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.75
+    
+                    if elapsed < 0.25 {
+                        std::thread::sleep(Duration::from_secs_f32(0.25 - elapsed));
+                    }
+                }
+            });
+        }
+
+        fn start_hit_loop(&mut self) {
+            self.append_loop(|api, player_mut, gstats_mut, _, _| -> Result<(), crate::Error> {
+                loop {
+                    let dir = player_mut.lock().unwrap().get_dir(); 
+                    let inst = Instant::now();
+                    let h_info = api.player_hit(dir.unwrap_or(crate::api::Direction::North))?;
+                    let mut stats = gstats_mut.lock().unwrap();
+    
+                    if !h_info.executed() {
+                        // TODO: Proper error
+                        println!("Hit not executed!");
+                        continue;
+                    }
+    
+                    stats.hits += h_info.hit;
+                    stats.criticals += h_info.critical;
+    
+                    drop(stats);
+    
+                    let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.75
+    
+                    if elapsed < 0.25 {
+                        std::thread::sleep(Duration::from_secs_f32(0.25 - elapsed));
+                    }
+                }
+            });
         }
 
         fn start_teleport_loop(&mut self) {
-            self.teleport_loop = Some(start_teleport_loop(
-                self.api.clone(),
-                self.logger.clone(),
-                self.stats.clone(),
-                self.player.clone()
-            ))
-        }
-    // 
-}
-
-pub fn start_move_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_mut : Arc<Mutex<L>>, 
-mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let func = 
-        |api : &Api, _ : &mut Arc<Mutex<L>>, gstats_mut: &mut Arc<Mutex<GameStats>>, 
-        player_mut: &Arc<Mutex<Player>>| -> Result<(), crate::Error> {
-            loop {
-                let dir = player_mut.lock().unwrap().get_dir(); 
-                let inst = Instant::now();
-                let m_info = api.player_move(dir)?;
-                let stats = gstats_mut.lock().unwrap();
-                let mut player = player_mut.lock().unwrap();
-
-                if !m_info.executed() {
-                    // TODO: Proper error
-                    println!("Move not executed!");
-                    continue;
-                }
-
-                if !m_info.moved {
-                    player.set_dir(dir.opposite());
-                    player.map_wall(dir, &stats.map);
-                }
-
-                drop(player);
-                drop(stats);
-
-                let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.75
-
-                if elapsed < 0.25 {
-                    std::thread::sleep(Duration::from_secs_f32(0.25 - elapsed));
-                }
-            }
-        }; 
-
-        loop {
-            if let Err(err) = 
-            func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
-                if err.to_string().starts_with("No running game") {
-                    break;
-                } 
-
-                println!(" => Error in status thread! {}", err);
-            }
-        }
-    })
-}
-
-pub fn start_radar_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_mut : Arc<Mutex<L>>, 
-mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let func = 
-        |api : &Api, _ : &mut Arc<Mutex<L>>, _ : &mut Arc<Mutex<GameStats>>, 
-        player_mut: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
-            let mut last_dash = Instant::now(); 
-            loop {
-                let inst = Instant::now();
-                let r_info = api.player_radar()?;
-                // let stats = gstats_mut.lock().unwrap();
-                let mut player = player_mut.lock().unwrap();
-
-                if !r_info.executed() {
-                    // TODO: Proper error
-                    println!("Radar not executed!");
-                    continue;
-                }
-
-                if let Some(dir) = r_info.best_move_dir() {
-                    player.set_dir(dir);
-
-                    if last_dash.elapsed().as_secs_f32() > 5.0 {
-                        let d_info = api.player_dash(dir)?;
-
-                        if d_info.executed() {
-                            println!(" => Dashed!");
-                        }
-
-                        last_dash = Instant::now();
-                    }
-                }
-
-                drop(player);
-
-                let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.75
-
-                if elapsed < 0.25 {
-                    std::thread::sleep(Duration::from_secs_f32(0.25 - elapsed));
-                }
-            }
-        }; 
-
-        loop {
-            if let Err(err) = 
-            func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
-                if err.to_string().starts_with("No running game") {
-                    break;
-                } 
-
-                println!(" => Error in status thread! {}", err);
-            }
-        }
-    })
-}
-
-pub fn start_hit_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_mut : Arc<Mutex<L>>, 
-mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
-    std::thread::spawn(move || {
-        let func = 
-        |api : &Api, _ : &mut Arc<Mutex<L>>, gstats_mut : &mut Arc<Mutex<GameStats>>, 
-        player_mut: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
-            loop {
-                let dir = player_mut.lock().unwrap().get_dir(); 
-                let inst = Instant::now();
-                let h_info = api.player_hit(dir)?;
-                let mut stats = gstats_mut.lock().unwrap();
-
-                if !h_info.executed() {
-                    // TODO: Proper error
-                    println!("Hit not executed!");
-                    continue;
-                }
-
-                stats.hits += h_info.hit;
-                stats.criticals += h_info.critical;
-
-                drop(stats);
-
-                let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.75
-
-                if elapsed < 0.25 {
-                    std::thread::sleep(Duration::from_secs_f32(0.25 - elapsed));
-                }
-            }
-        }; 
-
-        loop {
-            if let Err(err) = 
-            func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
-                if err.to_string().starts_with("No running game") {
-                    break;
-                } 
-
-                println!(" => Error in status thread! {}", err);
-            }
-        }
-    })
-}
-
-pub fn start_teleport_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_mut : Arc<Mutex<L>>, 
-    mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
-        std::thread::spawn(move || {
-            let func = 
-            |api : &Api, _ : &mut Arc<Mutex<L>>, _ : &mut Arc<Mutex<GameStats>>, 
-            _: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
+            self.append_loop(|api, _, _, _, _| -> Result<(), crate::Error> {
                 loop {
                     let pos; 
 
@@ -484,17 +437,7 @@ pub fn start_teleport_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logg
 
                     std::thread::sleep(Duration::from_secs_f32(20.0));
                 }
-            }; 
-    
-            loop {
-                if let Err(err) = 
-                func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
-                    if err.to_string().starts_with("No running game") {
-                        break;
-                    } 
-    
-                    println!(" => Error in teleport thread! {}", err);
-                }
-            }
-        })
-    }
+            });
+        }
+    // 
+}

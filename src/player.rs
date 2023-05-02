@@ -6,7 +6,7 @@ pub struct Player {
     pub pos : OptPos,
     pub delta_pos : RelPos,
 
-    dir : Direction 
+    dir : Option<Direction>
 }
 
 impl Player {
@@ -20,12 +20,12 @@ impl Player {
     }
 
     #[inline]
-    pub fn set_dir(&mut self, dir : Direction) {
+    pub fn set_dir(&mut self, dir : Option<Direction>) {
         self.dir = dir;
     }
 
     #[inline]
-    pub fn get_dir(&self) -> Direction {
+    pub fn get_dir(&self) -> Option<Direction> {
         self.dir
     }
 

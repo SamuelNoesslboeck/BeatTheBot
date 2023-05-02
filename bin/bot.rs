@@ -32,6 +32,20 @@ fn main() -> Result<(), doof_bot::Error> {
         log.logln("========================");
         log.logln(format!("{:?}", stats));
         log.logln("");
+
+        if let Some(elapsed) = stats.last_stamp_elapsed() {
+            log.logln(format!("Time elapsed: {}", elapsed.as_secs_f32())); 
+        }
+
+        if let Some(kpm) = stats.kills_per_min() {
+            log.logln(format!("Kills per minute: {}", kpm));
+        }
+
+        if let Some(dpm) = stats.deaths_per_min() {
+            log.logln(format!("Deaths per minute: {}", dpm));
+        }
+
+        stats.create_stamp();
     })); 
 
     game.on_finish(Some(|log, stats| {
@@ -50,7 +64,7 @@ fn main() -> Result<(), doof_bot::Error> {
         }
         
         for _ in 0 .. 5 {
-            let s_info = api.player_shoot(game.player.lock().unwrap().get_dir())?;
+            let s_info = api.player_shoot(game.player.lock().unwrap().get_dir().unwrap_or(doof_bot::api::Direction::North))?;
 
             if !s_info.executed() {
                 println!(" -> Shoot not executed!");

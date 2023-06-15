@@ -1,5 +1,6 @@
 use std::fs::{OpenOptions, File};
 use std::io::Write;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use chrono::Local;
 
@@ -19,7 +20,7 @@ pub struct FileLogger {
 }
 
 impl FileLogger {
-    pub fn new(path: String) -> Self { 
+    pub fn new<P : AsRef<Path>>(path: P) -> Self { 
         let file = OpenOptions::new()
             .create(true)
             .write(true)

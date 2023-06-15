@@ -129,7 +129,7 @@ pub struct Game<L : Logger> {
     pub logger : Arc<Mutex<L>>, 
 
     // Data
-    api : Arc<Api>,
+    pub api : Arc<Api>,
     events : Arc<Mutex<Events<L>>>,
     pub player : Arc<Mutex<Player>>,
 
@@ -137,12 +137,12 @@ pub struct Game<L : Logger> {
 }
 
 impl<L : Logger + Send + 'static> Game<L> {
-    pub fn new(token : String, logger : L) -> Self {
+    pub fn new<S : Into<String>>(token : S, logger : L) -> Self {
         Self {
             stats: Default::default(),
             logger: Arc::new(Mutex::new(logger)), 
 
-            api: Arc::new(Api::new(token.clone())), 
+            api: Arc::new(Api::new(token.into())), 
             events: Arc::new(Mutex::new(Events::default())), 
             player: Arc::new(Mutex::new(Player::new())), 
 
@@ -151,7 +151,7 @@ impl<L : Logger + Send + 'static> Game<L> {
     }
 
     // Actions
-        pub fn start(&mut self) -> Result<(), crate::Error> {
+        pub fn start_min(&mut self) -> Result<(), crate::Error> {
             self.api.game_create()?;
 
             let ev = self.events.lock().unwrap(); 
@@ -162,9 +162,11 @@ impl<L : Logger + Send + 'static> Game<L> {
                 on_start(&mut logger, &mut stats);
             }
 
-            drop(ev);
-            drop(logger); 
-            drop(stats);
+            Ok(())
+        }
+
+        pub fn start(&mut self) -> Result<(), crate::Error> {
+            self.start_min()?; 
 
             self.start_stats_loop();
             self.start_radar_loop();
@@ -172,6 +174,11 @@ impl<L : Logger + Send + 'static> Game<L> {
             self.start_hit_loop();
             self.start_teleport_loop();
 
+            Ok(())
+        }
+
+        pub fn close(&mut self) -> Result<(), crate::Error> {
+            self.api.game_close()?;
             Ok(())
         }
     // 
@@ -229,7 +236,7 @@ impl<L : Logger + Send + 'static> Game<L> {
             })); 
         }
         
-        fn start_stats_loop(&mut self) {
+        pub fn start_stats_loop(&mut self) {
             self.append_loop(|api, player_mut, gstats_mut, events_mut, logger_mut| -> Result<(), crate::Error> {
                     // Returns an error if the game is not running yet
                     api.game_status()?;
@@ -300,7 +307,7 @@ impl<L : Logger + Send + 'static> Game<L> {
                 });
         }
 
-        fn start_move_loop(&mut self) {
+        pub fn start_move_loop(&mut self) {
             self.append_loop(|api, player_mut, gstats_mut, _, _| -> Result<(), crate::Error> {
                 loop {
                     let opt_dir = player_mut.lock().unwrap().get_dir(); 
@@ -335,7 +342,7 @@ impl<L : Logger + Send + 'static> Game<L> {
             });
         }
 
-        fn start_radar_loop(&mut self) {
+        pub fn start_radar_loop(&mut self) {
             self.append_loop(|api, player_mut, _, _, _| -> Result<(), crate::Error> {
                 let mut last_dash = Instant::now(); 
                 loop {
@@ -379,7 +386,7 @@ impl<L : Logger + Send + 'static> Game<L> {
             });
         }
 
-        fn start_hit_loop(&mut self) {
+        pub fn start_hit_loop(&mut self) {
             self.append_loop(|api, player_mut, gstats_mut, _, _| -> Result<(), crate::Error> {
                 loop {
                     let dir = player_mut.lock().unwrap().get_dir(); 
@@ -407,7 +414,7 @@ impl<L : Logger + Send + 'static> Game<L> {
             });
         }
 
-        fn start_teleport_loop(&mut self) {
+        pub fn start_teleport_loop(&mut self) {
             self.append_loop(|api, _, _, _, _| -> Result<(), crate::Error> {
                 loop {
                     let pos; 

@@ -10,10 +10,8 @@ fn main() -> Result<(), doof_bot::Error> {
     );
 
     game.on_start(Some(|log, _| {
-        log.logln("  [BeatTheBot]  ");
-        log.logln("================");
-        log.logln(" => Name: doof_bot");
-        log.logln(" => Version: 0.0.1");
+        log.logln("[doof_bot]");
+        log.logln("Bot entry for the BeatTheBot competition; Version 0.0.1 (c) Samuel Nösslböck");
         log.logln("");
     }));
 

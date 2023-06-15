@@ -11,6 +11,10 @@ name = "bot"
 path = "bin/bot.rs"
 
 [[bin]]
+name = "death_tests"
+path = "bin/death_tests.rs"
+
+[[bin]]
 name = "map_wall"
 path = "bin/map_wall.rs"
 

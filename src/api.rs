@@ -44,9 +44,9 @@ pub struct Api {
 }
 
 impl Api {
-    pub fn new(token : String) -> Self {
+    pub fn new<S : Into<String>>(token : S) -> Self {
         Self {
-            token: token,
+            token: token.into(),
             client: Client::new()
         }
     }

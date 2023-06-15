@@ -136,6 +136,10 @@ pub struct GameInfo {
             }
 
             max_dir
+        }
+
+        pub fn total(&self) -> u16 {
+            self.north + self.east + self.south + self.west + self.sameblock
         } 
     }
 
@@ -153,6 +157,10 @@ pub struct GameInfo {
         pub fn best_move_dir(&self) -> Option<Direction> {
             self.results.best_move_dir()
         } 
+
+        pub fn total(&self) -> u16 {
+            self.results.total()
+        }
     }
 
     impl ActionInfo for RadarInfo {
@@ -172,6 +180,10 @@ pub struct GameInfo {
     }
 
     impl ScanPos {
+        pub fn is_some(&self) -> bool {
+            self.x.is_some() && self.y.is_some()
+        }
+
         pub fn to_optpos(&self) -> OptPos {
             OptPos(self.x, self.y)
         }

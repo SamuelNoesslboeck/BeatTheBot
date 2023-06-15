@@ -41,7 +41,7 @@ fn main() -> Result<(), doof_bot::Error> {
     }));
 
     game.start()?;
-    
+
     for _ in 0 .. 1000 {              
         let info =  api.player_ult()?;
 

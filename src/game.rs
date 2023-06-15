@@ -58,7 +58,12 @@ pub struct GameStats {
     pub map : Map,
 
     #[serde(skip)]
-    pub stamps : Vec<(Self, Instant)>
+    pub stamps : Vec<(Self, Instant)>,
+
+    #[serde(skip)]
+    pub player_near : bool,
+    #[serde(skip)]
+    pub players_far : u16
 }
 
 impl GameStats {
@@ -93,7 +98,6 @@ pub struct Game<L : Logger> {
     pub player : Arc<Mutex<Player>>,
 
     // Acting
-    stats_loop : Option<std::thread::JoinHandle<()>>,
     move_loop : Option<std::thread::JoinHandle<()>>,
     hit_loop : Option<std::thread::JoinHandle<()>>,
     radar_loop : Option<std::thread::JoinHandle<()>>,
@@ -112,7 +116,6 @@ impl<L : Logger + Send + 'static> Game<L> {
             events: Arc::new(Mutex::new(Events::default())), 
             player: Arc::new(Mutex::new(Player::new())), 
 
-            stats_loop: None,
             move_loop: None,
             hit_loop: None,
             radar_loop: None,
@@ -124,7 +127,7 @@ impl<L : Logger + Send + 'static> Game<L> {
 
     // Actions
         pub fn start(&mut self) -> Result<(), crate::Error> {
-            self.api.game_create()?;
+            // self.api.game_create()?;
 
             let ev = self.events.lock().unwrap(); 
             let mut logger= self.logger.lock().unwrap();
@@ -354,13 +357,13 @@ pub fn start_radar_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_
 mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let func = 
-        |api : &Api, _ : &mut Arc<Mutex<L>>, _ : &mut Arc<Mutex<GameStats>>, 
+        |api : &Api, _ : &mut Arc<Mutex<L>>, gstats_mut : &mut Arc<Mutex<GameStats>>, 
         player_mut: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
             let mut last_dash = Instant::now(); 
             loop {
                 let inst = Instant::now();
                 let r_info = api.player_radar()?;
-                // let stats = gstats_mut.lock().unwrap();
+                let mut stats = gstats_mut.lock().unwrap();
                 let mut player = player_mut.lock().unwrap();
 
                 if !r_info.executed() {
@@ -383,7 +386,11 @@ mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> 
                     }
                 }
 
+                // Apply total amount of players
+                stats.players_far = r_info.total(); 
+
                 drop(player);
+                drop(stats);
 
                 let elapsed = inst.elapsed().as_secs_f32() * 0.3;  // Safety factor of 0.75
 
@@ -451,50 +458,106 @@ mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> 
 }
 
 pub fn start_teleport_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_mut : Arc<Mutex<L>>, 
-    mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
-        std::thread::spawn(move || {
-            let func = 
-            |api : &Api, _ : &mut Arc<Mutex<L>>, _ : &mut Arc<Mutex<GameStats>>, 
-            _: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
+mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let func = 
+        |api : &Api, _ : &mut Arc<Mutex<L>>, gstats_mut : &mut Arc<Mutex<GameStats>>, 
+        _: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
+            loop {
+                let pos; 
+
                 loop {
-                    let pos; 
+                    let s_info = api.player_scan()?;
+                    let mut stats = gstats_mut.lock().unwrap();
 
-                    loop {
-                        let s_info = api.player_scan()?;
-
-                        if s_info.executed() {
-                            if let Some(new_pos) = s_info.nearest.to_optpos().try_conv() {
-                                pos = new_pos;
-                                break;
-                            }
+                    if s_info.executed() {
+                        if let Some(new_pos) = s_info.nearest.to_optpos().try_conv() {
+                            pos = new_pos;
+                            break;
                         }
 
-                        std::thread::sleep(Duration::from_secs_f32(2.0));
+                        if s_info.nearest.is_some() {
+                            stats.player_near = true;
+                        }
                     }
 
-                    let t_info = api.player_teleport(pos)?;
-    
-                    if !t_info.executed() {
-                        // TODO: Proper error
-                        println!("Hit not executed!");
-                        continue;
-                    } else {
-                        println!(" => Teleported!"); 
-                    }
+                    drop(stats);
 
-                    std::thread::sleep(Duration::from_secs_f32(20.0));
+                    std::thread::sleep(Duration::from_secs_f32(2.0));
                 }
-            }; 
-    
-            loop {
-                if let Err(err) = 
-                func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
-                    if err.to_string().starts_with("No running game") {
-                        break;
-                    } 
-    
-                    println!(" => Error in teleport thread! {}", err);
+
+                let t_info = api.player_teleport(pos)?;
+
+                if !t_info.executed() {
+                    // TODO: Proper error
+                    println!("Hit not executed!");
+                    continue;
+                } else {
+                    println!(" => Teleported!"); 
                 }
+
+                std::thread::sleep(Duration::from_secs_f32(20.0));
             }
-        })
-    }
+        }; 
+
+        loop {
+            if let Err(err) = 
+            func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
+                if err.to_string().starts_with("No running game") {
+                    break;
+                } 
+
+                println!(" => Error in teleport thread! {}", err);
+            }
+        }
+    })
+}
+
+pub fn start_ult_loop<L : Logger + Send + 'static>(api : Arc<Api>, mut logger_mut : Arc<Mutex<L>>, 
+mut gstats_mut : Arc<Mutex<GameStats>>, mut player_mut : Arc<Mutex<Player>>) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let func = 
+        |api : &Api, _ : &mut Arc<Mutex<L>>, _ : &mut Arc<Mutex<GameStats>>, 
+        _: &Arc<Mutex<Player>>| -> Result<(), crate::Error> { 
+            loop {
+                let pos; 
+
+                loop {
+                    let s_info = api.player_scan()?;
+
+                    if s_info.executed() {
+                        if let Some(new_pos) = s_info.nearest.to_optpos().try_conv() {
+                            pos = new_pos;
+                            break;
+                        }
+                    }
+
+                    std::thread::sleep(Duration::from_secs_f32(2.0));
+                }
+
+                let t_info = api.player_teleport(pos)?;
+
+                if !t_info.executed() {
+                    // TODO: Proper error
+                    println!("Hit not executed!");
+                    continue;
+                } else {
+                    println!(" => Teleported!"); 
+                }
+
+                std::thread::sleep(Duration::from_secs_f32(20.0));
+            }
+        }; 
+
+        loop {
+            if let Err(err) = 
+            func(&api, &mut logger_mut, &mut gstats_mut, &mut player_mut) {
+                if err.to_string().starts_with("No running game") {
+                    break;
+                } 
+
+                println!(" => Error in teleport thread! {}", err);
+            }
+        }
+    })
+}
